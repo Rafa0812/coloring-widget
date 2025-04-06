@@ -1,0 +1,147 @@
+import React, { useRef, useState, useEffect } from 'react';
+import { Button } from '@/components/ui/button';
+import { SketchPicker } from 'react-color';
+import { Eraser, Paintbrush, ZoomIn, ZoomOut, Download } from 'lucide-react';
+
+const images = [
+  '/images/desenhos-de-animais-para-colorir-2.jpg',
+  '/images/wonder-day-animals-49-706x1024.jpg',
+  '/images/wonder-day-animals-51.jpg',
+  '/images/wonder-day-animals-60.jpg',
+];
+
+export default function ColoringWidget() {
+  const canvasRef = useRef(null);
+  const containerRef = useRef(null);
+  const [color, setColor] = useState('#FFD580');
+  const [isEraser, setIsEraser] = useState(false);
+  const [imageUrl, setImageUrl] = useState(images[0]);
+  const [scale, setScale] = useState(1);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    const image = new Image();
+    image.crossOrigin = 'anonymous';
+    image.src = imageUrl;
+
+    image.onload = () => {
+      canvas.width = image.width;
+      canvas.height = image.height;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(image, 0, 0);
+    };
+  }, [imageUrl]);
+
+  const floodFill = (x, y, fillColor) => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+
+    const targetColor = getColorAtPixel(data, x, y, canvas.width);
+    const matchColor = (i) => (
+      data[i] === targetColor[0] &&
+      data[i + 1] === targetColor[1] &&
+      data[i + 2] === targetColor[2] &&
+      data[i + 3] === targetColor[3]
+    );
+
+    const [r, g, b] = hexToRgb(fillColor);
+    const pixelStack = [[x, y]];
+    const visited = new Set();
+
+    while (pixelStack.length) {
+      const [px, py] = pixelStack.pop();
+      const i = (py * canvas.width + px) * 4;
+      if (!matchColor(i) || visited.has(i)) continue;
+
+      data[i] = r;
+      data[i + 1] = g;
+      data[i + 2] = b;
+      data[i + 3] = 255;
+      visited.add(i);
+
+      pixelStack.push([px + 1, py], [px - 1, py], [px, py + 1], [px, py - 1]);
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+  };
+
+  const handleCanvasClick = (e) => {
+    const rect = canvasRef.current.getBoundingClientRect();
+    const x = Math.floor((e.clientX - rect.left) * (canvasRef.current.width / rect.width));
+    const y = Math.floor((e.clientY - rect.top) * (canvasRef.current.height / rect.height));
+    const fill = isEraser ? '#FFFFFF' : color;
+    floodFill(x, y, fill);
+  };
+
+  const getColorAtPixel = (data, x, y, width) => {
+    const i = (y * width + x) * 4;
+    return [data[i], data[i + 1], data[i + 2], data[i + 3]];
+  };
+
+  const hexToRgb = (hex) => {
+    const bigint = parseInt(hex.replace('#', ''), 16);
+    return [(bigint >> 16) & 255, (bigint >> 8) & 255, bigint & 255];
+  };
+
+  const handleZoom = (factor) => {
+    setScale((prev) => Math.max(0.5, Math.min(prev * factor, 3)));
+  };
+
+  const handleWheelZoom = (e) => {
+    if (e.ctrlKey) {
+      e.preventDefault();
+      handleZoom(e.deltaY < 0 ? 1.1 : 0.9);
+    }
+  };
+
+  const handleDownload = () => {
+    const canvas = canvasRef.current;
+    const link = document.createElement('a');
+    link.download = 'desenho-colorido.png';
+    link.href = canvas.toDataURL();
+    link.click();
+  };
+
+  return (
+    <div className="p-4 bg-[#fff8e1] rounded-2xl shadow-md w-fit">
+      <div className="flex gap-4 mb-4">
+        <SketchPicker
+          color={color}
+          onChangeComplete={(c) => setColor(c.hex)}
+        />
+        <div className="flex flex-col gap-2">
+          <Button onClick={() => setIsEraser(false)}><Paintbrush className="mr-2 h-4 w-4" />Pincel</Button>
+          <Button onClick={() => setIsEraser(true)}><Eraser className="mr-2 h-4 w-4" />Borracha</Button>
+          <Button onClick={() => handleZoom(1.2)}><ZoomIn className="mr-2 h-4 w-4" />Zoom +</Button>
+          <Button onClick={() => handleZoom(1 / 1.2)}><ZoomOut className="mr-2 h-4 w-4" />Zoom -</Button>
+          <Button onClick={handleDownload}><Download className="mr-2 h-4 w-4" />Salvar</Button>
+        </div>
+      </div>
+      <div className="flex gap-2 mb-4 overflow-x-auto">
+        {images.map((img, idx) => (
+          <img
+            key={idx}
+            src={img}
+            alt={`Miniatura ${idx}`}
+            onClick={() => setImageUrl(img)}
+            className="w-20 h-20 object-cover rounded cursor-pointer border hover:border-yellow-500"
+          />
+        ))}
+      </div>
+      <div
+        ref={containerRef}
+        onWheel={handleWheelZoom}
+        style={{ transform: `scale(${scale})`, transformOrigin: 'top left' }}
+      >
+        <canvas
+          ref={canvasRef}
+          onClick={handleCanvasClick}
+          className="border rounded-xl cursor-crosshair"
+        />
+      </div>
+    </div>
+  );
+}
